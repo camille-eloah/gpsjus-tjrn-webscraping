@@ -2,7 +2,7 @@ from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import Select, WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-import csv
+import json
 from rich import print
 from rich.console import Console
 from rich.progress import track
@@ -30,7 +30,8 @@ options = select.options
 console.print("\n[bold cyan]🔍 Iniciando coleta de dados...[/]\n")
 
 # Percorre todas as unidades disponíveis (ignorando a primeira opção "Selecione uma opção")
-for index in track(range(1, len(options)), description="📊 Coletando dados..."):
+#for index in track(range(1, len(options)), description="📊 Coletando dados..."):
+for index in track(range(1, 5), description="📊 Coletando dados..."):
     try:
         select_element = WebDriverWait(driver, 10).until(
             EC.presence_of_element_located((By.ID, "unidade"))
@@ -43,9 +44,9 @@ for index in track(range(1, len(options)), description="📊 Coletando dados..."
             EC.presence_of_element_located((By.ID, "unidade"))
         )
         select = Select(select_element)
-        unidade = select.first_selected_option.text.strip()
+        unidade = select.first_selected_option.text.strip() # Aqui já coletará o valor que ficará em "unidade"
         
-        acervo = "N/A"
+        acervo = "N/A" # Aqui coletará já o valor que ficará em "acervo"
         try:
             acervo_element = WebDriverWait(driver, 10).until(
                 EC.presence_of_element_located((By.XPATH, "//h3[text()='Acervo']/following-sibling::div[@class='box-rounded']/a/div[@class='big']"))
@@ -54,88 +55,112 @@ for index in track(range(1, len(options)), description="📊 Coletando dados..."
         except:
             pass
         
-        processos_parados = "N/A"
-        try:
-            processos_parados_element = WebDriverWait(driver, 10).until(
-                EC.presence_of_element_located((By.XPATH, "//table[@class='lined']/tfoot/tr/td[last()]/a"))
-            )
-            processos_parados = processos_parados_element.text.strip()
-        except:
-            pass
+        # Coleta dos dados da tabela "Processos em tramitação"
+        processos = {
+            "CONHECIMENTO": {},
+            "EXECUÇÃO": {},
+            "EXECUÇÃO FISCAL": {},
+            "EXECUÇÃO CRIMINAL": {},
+            "TOTAL": {}
+        }
         
-        decisoes = despachos = julgamentos = "N/A"
         try:
-            title_element = WebDriverWait(driver, 5).until(
-                EC.presence_of_element_located((By.XPATH, "//div[@class='title' and text()='Atos judiciais proferidos (últimos 12 meses)']"))
+            # Localiza a tabela "Processos em tramitação"
+            table = WebDriverWait(driver, 10).until(
+                EC.presence_of_element_located((By.XPATH, "//h4[contains(text(), 'Processos em tramitação')]/following::table[1]"))
             )
-            tabela_element = title_element.find_element(By.XPATH, "following-sibling::table")
             
-            try:
-                decisoes = tabela_element.find_element(By.XPATH, ".//tr[td/strong[text()='Decisões']]/td[last()]").text.strip()
-            except:
-                pass
-            try:
-                despachos = tabela_element.find_element(By.XPATH, ".//tr[td/strong[text()='Despachos']]/td[last()]").text.strip()
-            except:
-                pass
-            try:
-                julgamentos = tabela_element.find_element(By.XPATH, ".//tr[td/strong[text()='Julgamentos']]/td[last()]").text.strip()
-            except:
-                pass
-        except:
-            console.print(f"[bold yellow]⚠️  Tabela 'Atos Judiciais Proferidos' não encontrada para {unidade}.[/]")
-        
-        cojud = inquerito_remetido = aguardando_pericia = "N/A"
-        try:
-            title_element_diligencias = WebDriverWait(driver, 5).until(
-                EC.presence_of_element_located((By.XPATH, "//div[@class='title' and contains(text(), 'Controle de Diligências (PJe)')]"))
-            )
-            tabela_diligencias_element = title_element_diligencias.find_element(By.XPATH, "following-sibling::table")
+            # Coleta os dados das linhas
+            rows = table.find_elements(By.TAG_NAME, "tr")
             
-            try:
-                aguardando_pericia = tabela_diligencias_element.find_element(By.XPATH, ".//tr[td[text()='Aguardando Perícia, Laudo Técnico ou Outros']]/td[2]").text.strip()
-            except:
-                pass
-            try:
-                cojud = tabela_diligencias_element.find_element(By.XPATH, ".//tr[td[text()='COJUD']]/td[2]").text.strip()
-            except:
-                pass
-            try:
-                inquerito_remetido = tabela_diligencias_element.find_element(By.XPATH, ".//tr[td[text()='INQUÉRITO REMETIDO AO MP']]/td[2]").text.strip()
-            except:
-                pass
-        except:
-            console.print(f"[bold yellow]⚠️  Tabela 'Controle de Diligências (PJe)' não encontrada para {unidade}.[/]")
+            current_category = None
+            
+            for row in rows:
+                cells = row.find_elements(By.TAG_NAME, "td")
+                
+                if len(cells) == 4:
+                    category = cells[0].text.strip()
+                    
+                    if "CONHECIMENTO" in category:
+                        current_category = "CONHECIMENTO"
+                        processos[current_category] = {
+                            "Total": cells[1].text.strip(),
+                            "+60 dias": cells[2].text.strip(),
+                            "+100 dias": cells[3].text.strip(),
+                            "Não julgados": {}
+                        }
+                    elif "EXECUÇÃO" in category and "FISCAL" not in category and "CRIMINAL" not in category:
+                        current_category = "EXECUÇÃO"
+                        processos[current_category] = {
+                            "Total": cells[1].text.strip(),
+                            "+60 dias": cells[2].text.strip(),
+                            "+100 dias": cells[3].text.strip()
+                        }
+                    elif "EXECUÇÃO FISCAL" in category:
+                        current_category = "EXECUÇÃO FISCAL"
+                        processos[current_category] = {
+                            "Total": cells[1].text.strip(),
+                            "+60 dias": cells[2].text.strip(),
+                            "+100 dias": cells[3].text.strip(),
+                            "Não julgados": {}
+                        }
+                    elif "EXECUÇÃO CRIMINAL" in category:
+                        current_category = "EXECUÇÃO CRIMINAL"
+                        processos[current_category] = {
+                            "Total": cells[1].text.strip(),
+                            "+60 dias": cells[2].text.strip(),
+                            "+100 dias": cells[3].text.strip()
+                        }
+                    elif "TOTAL" in category:
+                        processos["TOTAL"] = {
+                            "Total": cells[1].text.strip(),
+                            "+60 dias": cells[2].text.strip(),
+                            "+100 dias": cells[3].text.strip()
+                        }
+                    elif "Não julgados" in category:
+                        if current_category in ["CONHECIMENTO", "EXECUÇÃO FISCAL"]:
+                            processos[current_category]["Não julgados"] = {
+                                "Total": cells[1].text.strip(),
+                                "+60 dias": cells[2].text.strip(),
+                                "+100 dias": cells[3].text.strip()
+                            }
         
-        saldo = "N/A"
-        try:
-            title_element = WebDriverWait(driver, 10).until(
-                EC.presence_of_element_located((By.XPATH, "//div[@class='title' and text()='Demonstrativo de Distribuições (últimos 12 meses)']"))
-            )
-            tabela_element = title_element.find_element(By.XPATH, "following-sibling::table")
-            saldo = tabela_element.find_element(By.XPATH, ".//tfoot/tr/td[last()]").text.strip()
-        except:
-            pass
+        except Exception as e:
+            console.print(f"[bold yellow]⚠ Aviso:[/] Não foi possível coletar dados de 'Processos em tramitação' para {unidade}. Erro: {str(e)}")
         
-        data.append([index, unidade, acervo, processos_parados, decisoes, despachos, julgamentos, cojud, inquerito_remetido, aguardando_pericia, saldo])
+        data.append({
+            "id": index,
+            "unidade": unidade,
+            "acervo_total": acervo,
+            "processos_em_tramitacao": processos
+        })
         
-        console.print(f"[bold green]✔ Coletado:[/] [cyan]{unidade}[/] - [yellow]Acervo:[/] {acervo} - [magenta]Processos parados:[/] {processos_parados}")
+        console.print(f"[bold green]✔ Coletado:[/] [cyan]{unidade}[/] - [yellow]Acervo:[/] {acervo}")
+    
     except Exception as e:
         console.print(f"[bold red]❌ Erro ao processar a unidade {index}: {str(e)}[/]")
 
 driver.quit()
 
+# Exibe os resultados em uma tabela
 table = Table(title="📊 Resultados da Coleta")
-columns = ["ID", "Unidade", "Acervo", "Processos parados", "Decisões", "Despachos", "Julgamentos", "COJUD", "Inquérito Remetido", "Aguardando Perícia", "Saldo"]
-for col in columns:
-    table.add_column(col, style="bold")
-for row in data:
-    table.add_row(*[str(item) for item in row])
-console.print("\n[bold cyan]📌 Dados Coletados:[/]")
+table.add_column("ID", justify="right")
+table.add_column("Unidade", justify="left")
+table.add_column("Acervo Total", justify="right")
+table.add_column("Processos em Tramitação", justify="left")
+
+for item in data:
+    table.add_row(
+        str(item["id"]),
+        item["unidade"],
+        item["acervo_total"],
+        json.dumps(item["processos_em_tramitacao"], ensure_ascii=False)
+    )
+
 console.print(table)
 
-with open("dados_tjrn4.csv", "w", newline="", encoding="utf-8") as file:
-    writer = csv.writer(file)
-    writer.writerow(columns)
-    writer.writerows(data)
-console.print("\n[bold magenta]✅ Coleta finalizada. Dados salvos em 'dados_tjrn4.csv'.[/]\n")
+# Salva os dados em formato JSON
+with open('dados_tjrn.json', 'w', encoding='utf-8') as f:
+    json.dump(data, f, ensure_ascii=False, indent=2)
+
+console.print("\n[bold magenta]✅ Coleta finalizada. Dados salvos em 'dados_tjrn.json'.[/]\n")
