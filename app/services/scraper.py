@@ -6,63 +6,110 @@ from rich.console import Console
 from rich.progress import track
 import json
 
+from selenium.common.exceptions import StaleElementReferenceException, TimeoutException
+
 console = Console()
 
 class TJRNScraper:
     def __init__(self, headless=True):
         self.options = webdriver.ChromeOptions()
+        self.options.add_argument('--no-sandbox')
+        self.options.add_argument('--disable-dev-shm-usage')
+        self.options.add_argument('--disable-gpu')
         if headless:
-            self.options.add_argument('--headless')
+            self.options.add_argument('--headless=new')  # Nova sintaxe para headless
         self.driver = webdriver.Chrome(options=self.options)
         self.base_url = "https://gpsjus.tjrn.jus.br/1grau_gerencial_publico.php"
-    
+        self.wait = WebDriverWait(self.driver, 15) 
+
     def fetch_data(self, max_units=None):
-        self.driver.get(self.base_url)
-        WebDriverWait(self.driver, 10).until(
-            EC.presence_of_element_located((By.ID, "unidade"))
-        )
-        
-        select_element = self.driver.find_element(By.ID, "unidade")
-        select = Select(select_element)
-        options = select.options
-        
-        data = []
-        max_range = len(options) if max_units is None else min(max_units + 1, len(options))
-        
-        for index in track(range(1, max_range), description="📊 Coletando dados..."):
-            try:
-                unit_data = self._process_unit(index, select_element)
-                if unit_data:
-                    data.append(unit_data)
-            except Exception as e:
-                console.print(f"[bold red]❌ Erro ao processar a unidade {index}: {str(e)}[/]")
-        
-        self.driver.quit()
-        return data
+            self.driver.get(self.base_url)
+            self._wait_for_page_load()
+            
+            select_element = self.wait.until(
+                EC.presence_of_element_located((By.ID, "unidade"))
+            )
+            select = Select(select_element)
+            options = select.options
+            
+            data = []
+            max_range = len(options) if max_units is None else min(max_units + 1, len(options))
+            
+            for index in track(range(1, max_range), description="📊 Coletando dados..."):
+            # for index in track(range(1, 5), description="📊 Coletando dados..."): # Apenas 4 iterações para testar
+                try:
+                    unit_data = self._process_unit(index)
+                    if unit_data:
+                        data.append(unit_data)
+                except Exception as e:
+                    console.print(f"[bold red]❌ Erro ao processar a unidade {index}: {str(e)}[/]")
+                    # Tenta recarregar a página se falhar
+                    self.driver.get(self.base_url)
+                    self._wait_for_page_load()
+            
+            self.driver.quit()
+            return data
+    def _wait_for_page_load(self):
+        """Espera até que a página tenha terminado de carregar completamente"""
+        self.wait.until(lambda d: d.execute_script('return document.readyState') == 'complete')
+
+    def _process_unit(self, index):
+        """Processa uma unidade judiciária específica"""
+        try:
+            # Localiza o elemento select novamente a cada iteração
+            select_element = self.wait.until(
+                EC.presence_of_element_located((By.ID, "unidade"))  # Fechando os parênteses corretamente
+            )
+            select = Select(select_element)
+            
+            # Seleciona a opção pelo índice
+            select.select_by_index(index)
+            
+            # Espera até que os dados da nova unidade tenham carregado
+            self._wait_for_new_data(select_element)
+            
+            # Obtém os dados da unidade
+            select = Select(self.driver.find_element(By.ID, "unidade"))
+            unidade = select.first_selected_option.text.strip()
+            
+            acervo = self._get_acervo()
+            processos = self._get_processos_em_tramitacao()
+            
+            console.print(f"[bold green]✔ Coletado:[/] [cyan]{unidade}[/] - [yellow]Acervo:[/] {acervo}")
+            
+            return {
+                "id": index,
+                "unidade": unidade,
+                "acervo_total": acervo,
+                "processos_em_tramitacao": processos
+            }
+            
+        except StaleElementReferenceException:
+            # Se o elemento ficar obsoleto, tenta novamente
+            return self._process_unit(index)
+        except Exception as e:
+            console.print(f"[bold yellow]⚠ Tentando recuperar após erro: {str(e)}[/]")
+            raise
     
-    def _process_unit(self, index, select_element):
-        select = Select(select_element)
-        select.select_by_index(index)
-        WebDriverWait(self.driver, 10).until(EC.staleness_of(select_element))
-        
-        select_element = WebDriverWait(self.driver, 10).until(
-            EC.presence_of_element_located((By.ID, "unidade"))
-        )
-        select = Select(select_element)
-        unidade = select.first_selected_option.text.strip()
-        
-        acervo = self._get_acervo()
-        processos = self._get_processos_em_tramitacao()
-        
-        console.print(f"[bold green]✔ Coletado:[/] [cyan]{unidade}[/] - [yellow]Acervo:[/] {acervo}")
-        
-        return {
-            "id": index,
-            "unidade": unidade,
-            "acervo_total": acervo,
-            "processos_em_tramitacao": processos
-        }
-    
+    def _wait_for_new_data(self, old_element):
+        """Espera até que os novos dados tenham carregado após selecionar uma unidade"""
+        try:
+            # Espera até que o elemento antigo se torne obsoleto (indicando que a página está atualizando)
+            self.wait.until(EC.staleness_of(old_element))
+            
+            # Espera até que o novo select esteja disponível
+            self.wait.until(
+                EC.presence_of_element_located((By.ID, "unidade"))
+            )
+            
+            # Espera adicional para os dados serem carregados
+            self.wait.until(
+                EC.presence_of_element_located((By.XPATH, "//h3[text()='Acervo']"))
+            )  # Fechando todos os parênteses corretamente
+            
+        except TimeoutException:
+            console.print("[bold yellow]⚠ Tempo de espera excedido, tentando continuar...[/]")
+
     def _get_acervo(self):
         try:
             acervo_element = WebDriverWait(self.driver, 10).until(
