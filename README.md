@@ -1,43 +1,48 @@
-# Webscraping das Unidades Judiciárias do Gerencial da Vara 
+# API para Advogados
 ## Visão Geral
-Script de webscraping para capturar dados do sistema GPS-Jus do Tribunal de Justiça do Rio Grande do Norte (TJRN) (https://gpsjus.tjrn.jus.br/1grau_gerencial_publico.php) e exportar em formato de tabela.
+API com webscraping integrado para capturar dados do sistema GPS-Jus do Tribunal de Justiça do Rio Grande do Norte (TJRN) (https://gpsjus.tjrn.jus.br/1grau_gerencial_publico.php).
 
 ## Instalação
 1. Certifique-se de ter o Python instalado. Você pode baixar no site oficial [python.org](https://www.python.org/).
 2. Clone o repositório git:
-   
-   ```git clone https://github.com/camille-eloah/gpsjus-tjrn-webscraping.git```
+   ```bash
+   https://github.com/nathalylopess/AdvogAPI.git
+   ```
    
 3. Acesse o diretório do projeto:
    
-```cd gpsjus-tjrn-webscraping```
+   ```bash
+   cd AdvogAPI
+   ```
 
-4. Configure um ambiente virtual (recomendado):
+5. Configure um ambiente virtual (recomendado):
  
-```python -m venv venv```
+   ```bash
+   python -m venv venv
+   ```
 
 e ative o ambiente virtual
 
   - No Windows:
     
-```bash
-.\venv\Scripts\Activate.ps1
-```
+   ```bash
+   venv\Scripts\activate
+   ```
 
   - No Linux:
     
-```bash
-source venv/bin/activate
-```
+   ```bash
+   source venv/bin/activate
+   ```
 
 5. Instale as dependências necessárias:
 
-```bash
-    pip install -r requirements.txt
-```
+   ```bash
+   pip install -r requirements.txt
+   ```
 
-6. Execute o Script via terminal:
+6. Inicialize a aplicação via terminal:
 
-```bash
-    python script.py
-```
+   ```bash
+    uvicorn app.main:app
+   ```
