@@ -12,7 +12,7 @@ def main():
     console.print("[bold cyan]🚀 Iniciando coleta de dados do TJRN[/]")
     
     try:
-        scraper = TJRNScraper(headless=True)
+        scraper = TJRNScraper(headless=False) # "False" para DEBUG
         data = scraper.fetch_data()  # Coleta todas as unidades
         
         data_service = DataService()
