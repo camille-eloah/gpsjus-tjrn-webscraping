@@ -1,0 +1,128 @@
+[
+  {
+    "id": 1,
+    "unidade": "ACARI - VARA ÚNICA",
+    "acervo_total": "1.828",
+    "processos_em_tramitacao": {
+      "CONHECIMENTO": {
+        "Total": "847",
+        "+60 dias": "10",
+        "+100 dias": "4",
+        "Não julgados": {
+          "Total": "618",
+          "+60 dias": "8",
+          "+100 dias": "2"
+        }
+      },
+      "EXECUÇÃO": {
+        "Total": "565",
+        "+60 dias": "16",
+        "+100 dias": "6"
+      },
+      "EXECUÇÃO FISCAL": {
+        "Total": "17",
+        "+60 dias": "0",
+        "+100 dias": "0",
+        "Não julgados": {
+          "Total": "13",
+          "+60 dias": "0",
+          "+100 dias": "0"
+        }
+      },
+      "EXECUÇÃO CRIMINAL": {
+        "Total": "58",
+        "+60 dias": "0",
+        "+100 dias": "0"
+      },
+      "TOTAL": {
+        "Total": "1.487",
+        "+60 dias": "26",
+        "+100 dias": "10"
+      }
+    }
+  },
+  {
+    "id": 2,
+    "unidade": "ALEXANDRIA - VARA ÚNICA",
+    "acervo_total": "2.353",
+    "processos_em_tramitacao": {
+      "CONHECIMENTO": {
+        "Total": "1.282",
+        "+60 dias": "22",
+        "+100 dias": "4",
+        "Não julgados": {
+          "Total": "964",
+          "+60 dias": "13",
+          "+100 dias": "3"
+        }
+      },
+      "EXECUÇÃO": {
+        "Total": "535",
+        "+60 dias": "25",
+        "+100 dias": "2"
+      },
+      "EXECUÇÃO FISCAL": {
+        "Total": "19",
+        "+60 dias": "1",
+        "+100 dias": "0",
+        "Não julgados": {
+          "Total": "18",
+          "+60 dias": "1",
+          "+100 dias": "0"
+        }
+      },
+      "EXECUÇÃO CRIMINAL": {
+        "Total": "105",
+        "+60 dias": "8",
+        "+100 dias": "1"
+      },
+      "TOTAL": {
+        "Total": "1.941",
+        "+60 dias": "56",
+        "+100 dias": "7"
+      }
+    }
+  },
+  {
+    "id": 3,
+    "unidade": "ALMINO AFONSO - VARA ÚNICA",
+    "acervo_total": "2.293",
+    "processos_em_tramitacao": {
+      "CONHECIMENTO": {
+        "Total": "1.095",
+        "+60 dias": "81",
+        "+100 dias": "78",
+        "Não julgados": {
+          "Total": "837",
+          "+60 dias": "71",
+          "+100 dias": "54"
+        }
+      },
+      "EXECUÇÃO": {
+        "Total": "697",
+        "+60 dias": "54",
+        "+100 dias": "48"
+      },
+      "EXECUÇÃO FISCAL": {
+        "Total": "15",
+        "+60 dias": "0",
+        "+100 dias": "2",
+        "Não julgados": {
+          "Total": "12",
+          "+60 dias": "0",
+          "+100 dias": "2"
+        }
+      },
+      "EXECUÇÃO CRIMINAL": {
+        "Total": "110",
+        "+60 dias": "9",
+        "+100 dias": "34"
+      },
+      "TOTAL": {
+        "Total": "1.917",
+        "+60 dias": "144",
+        "+100 dias": "162"
+      }
+    }
+  }
+]
