@@ -1,14 +1,35 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, status
 from fastapi.responses import JSONResponse
+from fastapi.security import OAuth2PasswordRequestForm
 from app.services.data_service import DataService
+from app.models.user import Cliente, UserCreate, Token
 from app.models.schemas import UnidadeData
+from sqlmodel import Session, select
 from typing import List, Dict, Optional
 import logging
+
+from datetime import timedelta
+
+from app.api.authentication import (
+    authenticate_user,
+    create_access_token,
+    get_current_active_user,
+    hash_password,
+    ACCESS_TOKEN_EXPIRE_MINUTES,
+)
+from app.core.database import get_session
 
 # Router principal - Rotas gerais
 router = APIRouter(
     prefix="/api/v1",
     tags=["unidades"],
+    responses={404: {"description": "Não encontrado"}}
+)
+
+# Router de autenticação
+router_auth = APIRouter(
+    prefix="/api/v1/auth",
+    tags=["autenticação"],
     responses={404: {"description": "Não encontrado"}}
 )
 
@@ -20,6 +41,72 @@ router_unidade = APIRouter(
 )
 
 logger = logging.getLogger(__name__)
+
+# Rotas de Autenticação
+@router_auth.post(
+    "/token",
+    response_model=Token,
+    summary="Obter token de acesso",
+    description="Autentica o usuário e retorna um token JWT para uso nas rotas protegidas"
+)
+async def login(
+    form_data: OAuth2PasswordRequestForm = Depends(),
+    session: Session = Depends(get_session),
+):
+    user = authenticate_user(form_data.username, form_data.password, session)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Credenciais inválidas",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    access_token = create_access_token(
+        data={"sub": user.username},
+        expires_delta=timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES),
+    )
+    return {"access_token": access_token, "token_type": "bearer"}
+
+# Endpoint para criar um novo usuário
+@router_auth.post(
+    "/usuarios",
+    response_model=Cliente,
+    summary="Criar novo usuário",
+    description="Registra um novo usuário no sistema",
+    status_code=status.HTTP_201_CREATED,
+)
+async def criar_usuario(
+    usuario: UserCreate,
+    session: Session = Depends(get_session),
+):
+    # Verifica se usuário já existe no banco
+    statement = select(Cliente).where(Cliente.username == usuario.username)
+    existing_user = session.exec(statement).first()
+    if existing_user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Usuário já existe",
+        )
+
+    db_usuario = Cliente(
+        **usuario.dict(exclude={"password"}),
+        hashed_password=hash_password(usuario.password),
+    )
+
+    session.add(db_usuario)
+    session.commit()
+    session.refresh(db_usuario)  # Para atualizar o objeto com o ID gerado pelo banco
+
+    return db_usuario
+
+@router_auth.get(
+    "/usuarios/atual",
+    response_model=Cliente,
+    summary="Dados do usuário atual",
+    description="Retorna os dados do usuário autenticado"
+
+)
+async def get_usuario_atual(current_user: Cliente = Depends(get_current_active_user)):
+    return current_user
 
 def get_data_service():
     return DataService(auto_load=True)
@@ -105,7 +192,11 @@ def find_unit_by_id(data: List[Dict], unit_id: int) -> Dict:
     summary="Lista todas as unidades",
     description="Retorna todos os dados coletados das unidades judiciárias"
 )
-async def list_unidades(service: DataService = Depends(get_data_service)):
+async def list_unidades(
+    service: DataService = Depends(get_data_service),
+    current_user: Cliente = Depends(get_current_active_user)
+):
+    
     service.debug_file_path()
 
     if not service.data:
@@ -113,6 +204,8 @@ async def list_unidades(service: DataService = Depends(get_data_service)):
 
     try:
         return [transform_unit_data(unit) for unit in service.data]
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Erro ao processar lista de unidades: {str(e)}")
         raise HTTPException(500, "Erro ao processar os dados das unidades")
@@ -123,7 +216,8 @@ async def list_unidades(service: DataService = Depends(get_data_service)):
     description="Retorna os dados de processos em tramitação para todas as unidades"
 )
 async def get_processos(
-    service: DataService = Depends(get_data_service)
+    service: DataService = Depends(),
+    current_user: Cliente = Depends(get_current_active_user)
 ):
     try:
         resultados = []
@@ -140,7 +234,9 @@ async def get_processos(
             })
 
         return JSONResponse(content=resultados)
-
+    
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Erro ao processar processos gerais: {str(e)}")
         raise HTTPException(500, "Erro ao processar dados de processos")
@@ -151,7 +247,8 @@ async def get_processos(
     description="Retorna os dados de procedimentos e petições em tramitação para todas as unidades"
 )
 async def get_procedimentos(
-    service: DataService = Depends(get_data_service)
+    service: DataService = Depends(get_data_service),
+    current_user: Cliente = Depends(get_current_active_user)
 ):
     try:
         resultados = []
@@ -170,6 +267,8 @@ async def get_procedimentos(
 
         return JSONResponse(content=resultados)
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Erro ao processar procedimentos gerais: {str(e)}")
         raise HTTPException(500, "Erro ao processar dados de procedimentos/petições")
@@ -180,7 +279,8 @@ async def get_procedimentos(
     description="Retorna os dados de processos suspensos ou em arquivo provisório para todas as unidades"
 )
 async def get_suspensos_arquivo_provisorio(
-    service: DataService = Depends(get_data_service)
+    service: DataService = Depends(get_data_service),
+    current_user: Cliente = Depends(get_current_active_user)
 ):
     try:
         resultados = []
@@ -199,6 +299,8 @@ async def get_suspensos_arquivo_provisorio(
 
         return JSONResponse(content=resultados)
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Erro ao processar dados de suspensos gerais: {str(e)}")
         raise HTTPException(500, "Erro ao processar dados de suspensos/arquivo provisório")
@@ -209,7 +311,8 @@ async def get_suspensos_arquivo_provisorio(
     description="Retorna os dados de processos conclusos por tipo para todas as unidades judiciárias"
 )
 async def get_processos_conclusos_por_tipo(
-    service: DataService = Depends(get_data_service)
+    service: DataService = Depends(get_data_service),
+    current_user: Cliente = Depends(get_current_active_user)
 ):
     try:
         def safe_str(value):
@@ -240,17 +343,20 @@ async def get_processos_conclusos_por_tipo(
 
         return JSONResponse(content=resultados)
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Erro ao processar processos conclusos gerais: {str(e)}")
         raise HTTPException(500, "Erro ao processar processos conclusos por tipo")
-
+    
 @router.get(
     "/unidades/controle_de_prisoes",
     summary="Controle de prisões de todas as unidades",
     description="Retorna os dados da tabela de Controle de Prisões de todas as unidades judiciárias"
 )
 async def get_controle_de_prisoes(
-    service: DataService = Depends(get_data_service)
+    service: DataService = Depends(get_data_service),
+    current_user: Cliente = Depends(get_current_active_user)
 ):
     try:
         resultados = []
@@ -269,7 +375,9 @@ async def get_controle_de_prisoes(
             raise HTTPException(404, "Nenhum dado de controle de prisões encontrado")
 
         return JSONResponse(content=resultados)
-
+    
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Erro ao processar controle de prisões geral: {str(e)}")
         raise HTTPException(500, "Erro ao processar controle de prisões")
@@ -280,7 +388,8 @@ async def get_controle_de_prisoes(
     description="Retorna os dados da tabela de Controle de Diligências (PJe) de todas as unidades"
 )
 async def get_controle_de_diligencias(
-    service: DataService = Depends(get_data_service)
+    service: DataService = Depends(get_data_service),
+    current_user: Cliente = Depends(get_current_active_user)
 ):
     try:
         resultados = []
@@ -299,6 +408,8 @@ async def get_controle_de_diligencias(
 
         return JSONResponse(content=resultados)
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Erro ao processar controle de diligências geral: {str(e)}")
         raise HTTPException(500, "Erro ao processar controle de diligências")
@@ -309,7 +420,8 @@ async def get_controle_de_diligencias(
     description="Retorna os dados do Demonstrativo de Distribuições (últimos 12 meses) de todas as unidades"
 )
 async def get_distribuicoes(
-    service: DataService = Depends(get_data_service)
+    service: DataService = Depends(get_data_service),
+    current_user: Cliente = Depends(get_current_active_user)
 ):
     try:
         resultados = []
@@ -328,6 +440,8 @@ async def get_distribuicoes(
 
         return JSONResponse(content=resultados)
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Erro ao processar demonstrativo de distribuições geral: {str(e)}")
         raise HTTPException(500, "Erro ao processar distribuições")
@@ -338,7 +452,8 @@ async def get_distribuicoes(
     description="Retorna os dados da tabela de processos baixados (últimos 12 meses) de todas as unidades"
 )
 async def get_processos_baixados(
-    service: DataService = Depends(get_data_service)
+    service: DataService = Depends(get_data_service),
+    current_user: Cliente = Depends(get_current_active_user)
 ):
     try:
         resultados = []
@@ -357,6 +472,8 @@ async def get_processos_baixados(
 
         return JSONResponse(content=resultados)
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Erro ao processar processos baixados geral: {str(e)}")
         raise HTTPException(500, "Erro ao processar processos baixados")
@@ -367,7 +484,8 @@ async def get_processos_baixados(
     description="Retorna os dados da tabela de atos judiciais proferidos (últimos 12 meses) de todas as unidades"
 )
 async def get_atos_judiciais_proferidos(
-    service: DataService = Depends(get_data_service)
+    service: DataService = Depends(get_data_service),
+    current_user: Cliente = Depends(get_current_active_user)
 ):
     try:
         resultados = []
@@ -386,6 +504,8 @@ async def get_atos_judiciais_proferidos(
 
         return JSONResponse(content=resultados)
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Erro ao processar atos judiciais geral: {str(e)}")
         raise HTTPException(500, "Erro ao processar atos judiciais")
@@ -397,7 +517,8 @@ async def get_atos_judiciais_proferidos(
 )
 async def get_unidade(
     unit_id: int,
-    service: DataService = Depends(get_data_service)
+    service: DataService = Depends(get_data_service),
+    current_user: Cliente = Depends(get_current_active_user)
 ):
     try:
         unit = find_unit_by_id(service.data, unit_id)
@@ -415,7 +536,8 @@ async def get_unidade(
 )
 async def get_processos_unidade(
     unit_id: int,
-    service: DataService = Depends(get_data_service)
+    service: DataService = Depends(get_data_service),
+    current_user: Cliente = Depends(get_current_active_user)
 ):
     try:
         unit = find_unit_by_id(service.data, unit_id)
@@ -424,6 +546,7 @@ async def get_processos_unidade(
             for k, v in unit.get("processos_em_tramitacao", {}).items()
         }
         return JSONResponse(content=processos)
+    
     except HTTPException:
         raise
     except Exception as e:
@@ -437,7 +560,8 @@ async def get_processos_unidade(
 )
 async def get_procedimentos_unidade(
     unit_id: int,
-    service: DataService = Depends(get_data_service)
+    service: DataService = Depends(get_data_service),
+    current_user: Cliente = Depends(get_current_active_user)
 ):
     try:
         unit = find_unit_by_id(service.data, unit_id)
@@ -461,7 +585,8 @@ async def get_procedimentos_unidade(
 )
 async def get_suspensos_arquivo_provisorio_unidade(
     unit_id: int,
-    service: DataService = Depends(get_data_service)
+    service: DataService = Depends(get_data_service),
+    current_user: Cliente = Depends(get_current_active_user)
 ):
     try:
         unit = find_unit_by_id(service.data, unit_id)
@@ -485,7 +610,8 @@ async def get_suspensos_arquivo_provisorio_unidade(
 )
 async def get_processos_conclusos_por_tipo(
     unit_id: int,
-    service: DataService = Depends(get_data_service)
+    service: DataService = Depends(get_data_service),
+    current_user: Cliente = Depends(get_current_active_user)
 ):
     try:
         unit = find_unit_by_id(service.data, unit_id)
@@ -522,7 +648,8 @@ async def get_processos_conclusos_por_tipo(
 
 async def get_controle_de_prisoes(
     unit_id: int,
-    service: DataService = Depends(get_data_service)
+    service: DataService = Depends(get_data_service),
+    current_user: Cliente = Depends(get_current_active_user)
 ):
     try:
         unit = find_unit_by_id(service.data, unit_id)
@@ -532,6 +659,7 @@ async def get_controle_de_prisoes(
 
         controle_transformado = transform_controle_de_prisoes(controle)
         return JSONResponse(content=controle_transformado)
+    
     except HTTPException:
         raise
     except Exception as e:
@@ -545,7 +673,8 @@ async def get_controle_de_prisoes(
 )
 async def get_controle_de_diligencias_unidade(
     unit_id: int,
-    service: DataService = Depends(get_data_service)
+    service: DataService = Depends(get_data_service),
+    current_user: Cliente = Depends(get_current_active_user)
 ):
     try:
         unit = find_unit_by_id(service.data, unit_id)
@@ -569,7 +698,8 @@ async def get_controle_de_diligencias_unidade(
 )
 async def get_distribuicoes_unidade(
     unit_id: int,
-    service: DataService = Depends(get_data_service)
+    service: DataService = Depends(get_data_service),
+    current_user: Cliente = Depends(get_current_active_user)
 ):
     try:
         unit = find_unit_by_id(service.data, unit_id)
@@ -579,6 +709,7 @@ async def get_distribuicoes_unidade(
             raise HTTPException(404, f"Dados de demonstrativo de distribuições não encontrados para a unidade {unit_id}")
 
         return JSONResponse(content=distrib)
+    
     except HTTPException:
         raise
     except Exception as e:
@@ -592,7 +723,8 @@ async def get_distribuicoes_unidade(
 )
 async def get_processos_baixados_unidade(
     unit_id: int,
-    service: DataService = Depends(get_data_service)
+    service: DataService = Depends(get_data_service),
+    current_user: Cliente = Depends(get_current_active_user)
 ):
     try:
         unit = find_unit_by_id(service.data, unit_id)
@@ -602,6 +734,7 @@ async def get_processos_baixados_unidade(
             raise HTTPException(404, f"Dados de 'processos baixados' não encontrados para a unidade {unit_id}")
 
         return JSONResponse(content=processos_baixados)
+    
     except HTTPException:
         raise
     except Exception as e:
@@ -615,7 +748,8 @@ async def get_processos_baixados_unidade(
 )
 async def get_atos_judiciais_proferidos_unidade(
     unit_id: int,
-    service: DataService = Depends(get_data_service)
+    service: DataService = Depends(get_data_service),
+    current_user: Cliente = Depends(get_current_active_user)
 ):
     try:
         unit = find_unit_by_id(service.data, unit_id)
@@ -625,6 +759,7 @@ async def get_atos_judiciais_proferidos_unidade(
             raise HTTPException(404, f"A unidade {unit_id} não possui dados de atos judiciais proferidos")
 
         return JSONResponse(content=atos)
+    
     except HTTPException:
         raise
     except Exception as e:
