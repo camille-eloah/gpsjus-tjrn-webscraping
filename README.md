@@ -46,8 +46,8 @@ docker compose up
    
 3. Clone o repositório git e acesse o diretório do projeto:
    ```bash
-   https://github.com/nathalylopess/AdvogAPI.git
-   cd AdvogAPI
+   git clone https://github.com/nathalylopess/AdvogAPI.git](https://github.com/camille-eloah/gpsjus-tjrn-webscraping.git
+   cd gpsjus-tjrn-webscraping
    ```
 
 4. Configure um ambiente virtual (recomendado):
